@@ -21,26 +21,147 @@ Do not open the clone in an editor, and do not run `npm` or `vite`, until `--che
 
 ## Quick start
 
-```bash
-# Install uv: https://docs.astral.sh/uv/
-uv sync --extra dev
-cp .env.example .env          # Windows: copy .env.example .env
-# Edit CLONE_ROOT if you will clone from URLs
+### Prerequisites
 
+- Python **3.11+** and **git** on `PATH`.
+- **Docker** only if you run the e2e image.
+- Signing is optional — see [docs/signing.md](docs/signing.md).
+- Do not open the infected clone in an editor or run `npm` / `vite` until `--check` is clean.
+
+### Install
+
+With [uv](https://docs.astral.sh/uv/) (same on every OS):
+
+```bash
+uv sync --extra dev
 uv run git-dropper-cleanup --help
-uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --check
+```
+
+Copy `.env.example` to `.env` and set **`CLONE_ROOT`** if you will pass git URLs:
+
+**Linux / macOS**
+
+```bash
+cp .env.example .env
+```
+
+**Windows (PowerShell)**
+
+```powershell
+Copy-Item .env.example .env
 ```
 
 Without uv:
 
+**Linux / macOS**
+
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate     # Windows: .venv\Scripts\Activate.ps1
+source .venv/bin/activate
 pip install -e ".[dev]"
 python -m git_dropper_cleanup --help
 ```
 
-**Prerequisites:** Python **3.11+**, **git** on `PATH`. **Docker** only if you run the e2e image. Signing is optional — see [docs/signing.md](docs/signing.md).
+**Windows (PowerShell)**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+python -m git_dropper_cleanup --help
+```
+
+If `Activate.ps1` is blocked, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in that session, or `python -m pip install -e ".[dev]"` without activating.
+
+### Cleanup sequence
+
+Use a **local clone path** or a **git URL** (URLs need `CLONE_ROOT` in `.env`). Replace `owner/repo` with your clone. You can omit the path when `REPO_URL` or `DEMO_REPO` is set in the shell (see [Configuration](#configuration)).
+
+1. **Check** — read branches, affected commits, and worktree; exit **1** when anything still has the dropper.
+
+   **Linux / macOS**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --check
+   uv run git-dropper-cleanup https://github.com/owner/repo.git --check
+   ```
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
+   uv run git-dropper-cleanup https://github.com/owner/repo.git --check
+   ```
+
+2. **Rewrite** — one branch or the whole clone (see [One branch](#one-branch) if the tool refuses).
+
+   **Linux / macOS — one branch**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --rewrite --branch feature
+   ```
+
+   **Linux / macOS — full clone**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --rewrite
+   ```
+
+   **Windows (PowerShell) — one branch**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --rewrite --branch feature
+   ```
+
+   **Windows (PowerShell) — full clone**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --rewrite
+   ```
+
+3. **Check again** — confirm the rewrite before pushing.
+
+   **Linux / macOS**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --check
+   ```
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
+   ```
+
+4. **Push** — after review; rewritten history uses `--force-with-lease`. Pick one: a feature branch, or `--push-main` when `main` or `master` moved.
+
+   **Linux / macOS — feature branch**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --push --branch feature
+   ```
+
+   **Linux / macOS — when main or master moved**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --push --push-main
+   ```
+
+   **Windows (PowerShell) — feature branch**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --push --branch feature
+   ```
+
+   **Windows (PowerShell) — when main or master moved**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --push --push-main
+   ```
+
+   **Windows (Git Bash)** uses the same `uv run …` lines as Linux / macOS; use `/c/path/to/clones/owner/repo` paths.
+
+For a repeatable infected demo against `test-affected-repo`, follow **[demo/manual/RUNBOOK.md](demo/manual/RUNBOOK.md)** (prerequisites, infect script, then the same check → rewrite → push → verify loop).
 
 ## What each run can change
 
@@ -59,13 +180,33 @@ A rewritten commit gets a new SHA. Every later commit on that line also gets a n
 
 ## Configuration
 
-`.env` is not committed. The only setting is **`CLONE_ROOT`**. A URL is cloned to `CLONE_ROOT/owner/repo`. A relative value is resolved from the directory that contains `.env`.
+`.env` is not committed. The only setting in that file is **`CLONE_ROOT`**. A URL is cloned to `CLONE_ROOT/owner/repo`. A relative value is resolved from the directory that contains `.env`.
 
 ```text
 CLONE_ROOT=./clones
 ```
 
 If `.env` is missing, or `CLONE_ROOT` is empty, a URL clone stops before anything is downloaded. A local repository path does not need `CLONE_ROOT`.
+
+**`REPO_URL`** and **`DEMO_REPO`** are shell variables, not keys in `.env`. When the path argument is omitted, the tool uses `REPO_URL` if it is set, otherwise `DEMO_REPO`. `REPO_URL` is a git URL and still needs `CLONE_ROOT`. `DEMO_REPO` is a local clone path.
+
+**Linux / macOS**
+
+```bash
+export REPO_URL="https://github.com/owner/repo.git"
+# or a local clone, used only when REPO_URL is unset:
+export DEMO_REPO="/path/to/clones/owner/repo"
+uv run git-dropper-cleanup --check
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:REPO_URL = "https://github.com/owner/repo.git"
+# or a local clone, used only when REPO_URL is unset:
+$env:DEMO_REPO = "C:\path\to\clones\owner\repo"
+uv run git-dropper-cleanup --check
+```
 
 Do not put a signing key in `.env`.
 
@@ -86,7 +227,7 @@ flowchart TD
   backup --> pushStep["--push, plus --push-main when main or master moves"]
 ```
 
-Remote-tracking branches are reported by `--check` and are not a reason to refuse. They are not moved. Create a local branch first when a remote-only branch must be rewritten. After a rewrite, `--push` can update the remote with `--force-with-lease` because those remote-tracking refs still point at the old commits.
+Remote-tracking branches are reported by `--check` and are not a reason to refuse a single-branch rewrite. A full `--rewrite` creates local branches for `origin/*` only after it finds infected commits and the worktree is clean. `--rewrite --branch NAME` creates that local branch from `origin/NAME` after the refusal check passes; other remote-only branches stay remote-tracking refs and are not moved. After a rewrite, `--push` can update the remote with `--force-with-lease` because those remote-tracking refs still point at the old commits.
 
 ## Check
 
@@ -100,12 +241,19 @@ Remote-tracking branches are reported by `--check` and are not a reason to refus
 
 The exit code is **1** when the worktree, a branch, a tag, a remote-tracking branch, or `tasks.json` still has the dropper. A backup ref alone does not fail the check.
 
+**Linux / macOS**
+
 ```bash
 uv run git-dropper-cleanup https://github.com/owner/repo.git --check
-uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --check
+uv run git-dropper-cleanup /path/to/clones/owner/repo --check
 ```
 
-On Windows PowerShell, use `$env:CLONE_ROOT\owner\repo` instead of `$CLONE_ROOT/owner/repo`.
+**Windows (PowerShell)**
+
+```powershell
+uv run git-dropper-cleanup https://github.com/owner/repo.git --check
+uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
+```
 
 Example:
 
@@ -131,6 +279,8 @@ Each `--check` and `--push` writes a markdown report under `reports/` in this to
 ## Fix
 
 `--fix` removes the dropper from code files in the current checkout. It does not commit and does not switch branches.
+
+The examples from here on use bash `$CLONE_ROOT`. In PowerShell, pass the clone path directly, for example `C:\path\to\clones\owner\repo`.
 
 ```bash
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --fix
