@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "git-dropper-cleanup"
+version = "0.1.0"
+description = "Aftermath toolkit: remove an appended JavaScript dropper from a git repository without running repository code."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+git-dropper-cleanup = "git_dropper_cleanup.__main__:main"
+sign-history = "sign_history.__main__:main"
+
+[tool.setuptools]
+packages = ["git_dropper_cleanup", "sign_history"]
+package-dir = { git_dropper_cleanup = "src" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
