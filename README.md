@@ -75,7 +75,7 @@ If `Activate.ps1` is blocked, run `Set-ExecutionPolicy -Scope Process -Execution
 
 ### Cleanup sequence
 
-Use a **local clone path** or a **git URL** (URLs need `CLONE_ROOT` in `.env`). Replace `owner/repo` with your clone. You can also `export REPO_URL=…` / `$env:REPO_URL = …` and omit the path (see [Configuration](#configuration)).
+Use a **local clone path** or a **git URL** (URLs need `CLONE_ROOT` in `.env`). Replace `owner/repo` with your clone. You can omit the path when `REPO_URL` or `DEMO_REPO` is set in the shell (see [Configuration](#configuration)).
 
 1. **Check** — read branches, affected commits, and worktree; exit **1** when anything still has the dropper.
 
@@ -133,19 +133,29 @@ Use a **local clone path** or a **git URL** (URLs need `CLONE_ROOT` in `.env`). 
    uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
    ```
 
-4. **Push** — after review; rewritten history uses `--force-with-lease`. Add `--push-main` when `main` or `master` moved.
+4. **Push** — after review; rewritten history uses `--force-with-lease`. Pick one: a feature branch, or `--push-main` when `main` or `master` moved.
 
-   **Linux / macOS**
+   **Linux / macOS — feature branch**
 
    ```bash
    uv run git-dropper-cleanup /path/to/clones/owner/repo --push --branch feature
+   ```
+
+   **Linux / macOS — when main or master moved**
+
+   ```bash
    uv run git-dropper-cleanup /path/to/clones/owner/repo --push --push-main
    ```
 
-   **Windows (PowerShell)**
+   **Windows (PowerShell) — feature branch**
 
    ```powershell
    uv run git-dropper-cleanup C:\path\to\clones\owner\repo --push --branch feature
+   ```
+
+   **Windows (PowerShell) — when main or master moved**
+
+   ```powershell
    uv run git-dropper-cleanup C:\path\to\clones\owner\repo --push --push-main
    ```
 
@@ -170,13 +180,33 @@ A rewritten commit gets a new SHA. Every later commit on that line also gets a n
 
 ## Configuration
 
-`.env` is not committed. The only setting is **`CLONE_ROOT`**. A URL is cloned to `CLONE_ROOT/owner/repo`. A relative value is resolved from the directory that contains `.env`.
+`.env` is not committed. The only setting in that file is **`CLONE_ROOT`**. A URL is cloned to `CLONE_ROOT/owner/repo`. A relative value is resolved from the directory that contains `.env`.
 
 ```text
 CLONE_ROOT=./clones
 ```
 
 If `.env` is missing, or `CLONE_ROOT` is empty, a URL clone stops before anything is downloaded. A local repository path does not need `CLONE_ROOT`.
+
+**`REPO_URL`** and **`DEMO_REPO`** are shell variables, not keys in `.env`. When the path argument is omitted, the tool uses `REPO_URL` if it is set, otherwise `DEMO_REPO`. `REPO_URL` is a git URL and still needs `CLONE_ROOT`. `DEMO_REPO` is a local clone path.
+
+**Linux / macOS**
+
+```bash
+export REPO_URL="https://github.com/owner/repo.git"
+# or a local clone, used only when REPO_URL is unset:
+export DEMO_REPO="/path/to/clones/owner/repo"
+uv run git-dropper-cleanup --check
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:REPO_URL = "https://github.com/owner/repo.git"
+# or a local clone, used only when REPO_URL is unset:
+$env:DEMO_REPO = "C:\path\to\clones\owner\repo"
+uv run git-dropper-cleanup --check
+```
 
 Do not put a signing key in `.env`.
 
@@ -249,6 +279,8 @@ Each `--check` and `--push` writes a markdown report under `reports/` in this to
 ## Fix
 
 `--fix` removes the dropper from code files in the current checkout. It does not commit and does not switch branches.
+
+The examples from here on use bash `$CLONE_ROOT`. In PowerShell, pass the clone path directly, for example `C:\path\to\clones\owner\repo`.
 
 ```bash
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --fix
