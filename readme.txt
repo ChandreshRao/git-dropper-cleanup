@@ -1,0 +1,1 @@
+# git-dropper-cleanup
