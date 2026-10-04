@@ -10,7 +10,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 WORKDIR /app
 COPY pyproject.toml ./
-COPY git_dropper_cleanup ./git_dropper_cleanup/
+COPY src ./src/
 COPY sign_history ./sign_history/
 COPY e2e/run.sh ./e2e/run.sh
 

@@ -12,6 +12,10 @@ dev = ["pytest"]
 git-dropper-cleanup = "git_dropper_cleanup.__main__:main"
 sign-history = "sign_history.__main__:main"
 
+[tool.setuptools]
+packages = ["git_dropper_cleanup", "sign_history"]
+package-dir = { git_dropper_cleanup = "src" }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
