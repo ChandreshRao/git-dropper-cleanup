@@ -5,6 +5,7 @@ The loader uses the standard library. It does not read signing keys.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +32,18 @@ def read_env_file(path: Path) -> dict[str, str]:
             value = value[1:-1]
         values[key] = value
     return values
+
+
+def omitted_target() -> str:
+    """Return REPO_URL or DEMO_REPO from the process environment, or an empty string.
+
+    Does not read .env. CLONE_ROOT is the only key loaded from that file.
+    """
+    for key in ("REPO_URL", "DEMO_REPO"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def clone_root(path: Path | None = None) -> Path:

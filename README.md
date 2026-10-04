@@ -126,6 +126,8 @@ commits:
 
 Stop here when you do not want that repository changed.
 
+Each `--check` and `--push` writes a markdown report under `reports/` in this tool checkout. The folder name includes the clone's parent directory, so two repos with the same name stay apart. `--rewrite` writes a report when it moves refs. Reports are not written when a rewrite refuses or finds nothing to change. The console output is unchanged. Pass **`--no-report`** to skip writing files.
+
 ## Fix
 
 `--fix` removes the dropper from code files in the current checkout. It does not commit and does not switch branches.
@@ -154,13 +156,17 @@ The old tip of each moved ref is saved under `refs/backup/git-dropper-cleanup/` 
 
 The worktree must match the last commit. If it does not, the rewrite stops. After the checked-out branch moves, the worktree is reset to the new tip so the infected files do not stay on disk.
 
+On a URL clone, a full `--rewrite` creates local branches for `origin/*` only after it finds infected commits and the worktree is clean. A rewrite that refuses, or that finds nothing to change, does not create those branches.
+
 ```bash
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --rewrite
 ```
 
+When refs move, a rewrite report lists those refs and old→new commit SHAs with author, committer, and subject.
+
 ## One branch
 
-`--branch NAME` limits the rewrite to that local branch. Before any object is written, the tool refuses when another local branch or tag can still reach those infected commits. Nothing is moved and nothing is pushed.
+`--branch NAME` limits the rewrite to that branch. Before any object or local branch is written, the tool refuses when another local branch or tag can still reach those infected commits. Nothing is moved and nothing is pushed. A branch that exists only as `origin/NAME` is created after that check passes. Other remote-only branches stay remote-tracking refs, and remote-tracking refs do not cause the refusal.
 
 ```bash
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --rewrite --branch feature
@@ -228,6 +234,8 @@ You can push later, after a rewrite that you already reviewed:
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --push --push-main
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --push --branch feature
 ```
+
+Each push writes a report of attempted refs and outcomes (including refusals such as missing `--push-main`).
 
 ## Several repositories
 

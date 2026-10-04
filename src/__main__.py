@@ -10,6 +10,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from git_dropper_cleanup.env import omitted_target
 from git_dropper_cleanup.gitio import Git, resolve_targets, signing_key
 from git_dropper_cleanup.push import push_repo, was_rewritten
 from git_dropper_cleanup.report import check_repo
@@ -38,6 +39,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Treat a parent folder as a list of clones.",
     )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Do not write markdown reports under reports/<repo>/ in the tool checkout.",
+    )
     args = parser.parse_args(argv)
     chosen = [name for name, flag in (
         ("--check", args.check),
@@ -52,6 +58,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     if args.push and chosen and chosen[0] not in ("--branches", "--rewrite"):
         parser.error("--push is only combined with --branches or --rewrite, or used on its own after a rewrite.")
     return args
+
+
+def effective_paths(paths: list[str]) -> list[str]:
+    """Return CLI paths, or REPO_URL / DEMO_REPO from the environment when omitted."""
+    if paths:
+        return paths
+    target = omitted_target()
+    if target:
+        return [target]
+    raise SystemExit(
+        "Pass a git URL or a repo path, or set REPO_URL (or DEMO_REPO) in the environment. See README.md."
+    )
 
 
 def selected_mode(args: argparse.Namespace) -> str:
@@ -71,33 +89,46 @@ def main(argv: list[str] | None = None) -> int:
     """Run check, fix, branch-tip cleanup, rewrite, or push for each selected repo."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
     hooks = Path(tempfile.mkdtemp(prefix="git-dropper-cleanup-hooks-"))
-    targets = resolve_targets(args.paths, args.all_in_dir, hooks)
+    targets = resolve_targets(effective_paths(args.paths), args.all_in_dir, hooks)
     mode = selected_mode(args)
+    write_report = not args.no_report
     status = 0
     for repo in targets:
         git = Git(repo, hooks)
         if mode == "check":
-            status = max(status, check_repo(git))
+            status = max(status, check_repo(git, write_report=write_report))
         elif mode == "fix":
             fix_repo(git)
         elif mode == "branches":
             sign = bool(signing_key(git))
             branches_repo(git, sign)
             if args.push and sign:
-                status = max(status, push_repo(git, args.push_main, rewritten=False))
+                status = max(status, push_repo(
+                    git,
+                    args.push_main,
+                    rewritten=False,
+                    write_report=write_report,
+                ))
             elif args.push:
                 print("Skipped push because nothing was committed.")
         elif mode == "rewrite":
             sign = bool(signing_key(git))
-            rewrite_repo(git, sign, branch=args.branch)
+            rewrite_repo(git, sign, branch=args.branch, write_report=write_report)
             if args.push:
-                status = max(status, push_repo(git, args.push_main, rewritten=True, only_branch=args.branch))
+                status = max(status, push_repo(
+                    git,
+                    args.push_main,
+                    rewritten=True,
+                    only_branch=args.branch,
+                    write_report=write_report,
+                ))
         elif mode == "push":
             status = max(status, push_repo(
                 git,
                 args.push_main,
                 rewritten=was_rewritten(git),
                 only_branch=args.branch,
+                write_report=write_report,
             ))
     return status
 
