@@ -38,6 +38,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Treat a parent folder as a list of clones.",
     )
+    parser.add_argument(
+        "--no-report",
+        action="store_true",
+        help="Do not write markdown reports under reports/<repo>/ in the tool checkout.",
+    )
     args = parser.parse_args(argv)
     chosen = [name for name, flag in (
         ("--check", args.check),
@@ -73,31 +78,44 @@ def main(argv: list[str] | None = None) -> int:
     hooks = Path(tempfile.mkdtemp(prefix="git-dropper-cleanup-hooks-"))
     targets = resolve_targets(args.paths, args.all_in_dir, hooks)
     mode = selected_mode(args)
+    write_report = not args.no_report
     status = 0
     for repo in targets:
         git = Git(repo, hooks)
         if mode == "check":
-            status = max(status, check_repo(git))
+            status = max(status, check_repo(git, write_report=write_report))
         elif mode == "fix":
             fix_repo(git)
         elif mode == "branches":
             sign = bool(signing_key(git))
             branches_repo(git, sign)
             if args.push and sign:
-                status = max(status, push_repo(git, args.push_main, rewritten=False))
+                status = max(status, push_repo(
+                    git,
+                    args.push_main,
+                    rewritten=False,
+                    write_report=write_report,
+                ))
             elif args.push:
                 print("Skipped push because nothing was committed.")
         elif mode == "rewrite":
             sign = bool(signing_key(git))
-            rewrite_repo(git, sign, branch=args.branch)
+            rewrite_repo(git, sign, branch=args.branch, write_report=write_report)
             if args.push:
-                status = max(status, push_repo(git, args.push_main, rewritten=True, only_branch=args.branch))
+                status = max(status, push_repo(
+                    git,
+                    args.push_main,
+                    rewritten=True,
+                    only_branch=args.branch,
+                    write_report=write_report,
+                ))
         elif mode == "push":
             status = max(status, push_repo(
                 git,
                 args.push_main,
                 rewritten=was_rewritten(git),
                 only_branch=args.branch,
+                write_report=write_report,
             ))
     return status
 

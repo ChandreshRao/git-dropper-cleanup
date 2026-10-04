@@ -126,6 +126,8 @@ commits:
 
 Stop here when you do not want that repository changed.
 
+Each `--check`, `--rewrite`, and `--push` also writes a markdown report under `reports/<repo-name>/` in this tool checkout (tables for branches, affected commits with author/committer, rewrite mappings, and push results). The console output is unchanged. Pass **`--no-report`** to skip writing files.
+
 ## Fix
 
 `--fix` removes the dropper from code files in the current checkout. It does not commit and does not switch branches.
@@ -157,6 +159,8 @@ The worktree must match the last commit. If it does not, the rewrite stops. Afte
 ```bash
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --rewrite
 ```
+
+A rewrite report lists moved refs and old→new commit SHAs with author, committer, and subject.
 
 ## One branch
 
@@ -228,6 +232,8 @@ You can push later, after a rewrite that you already reviewed:
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --push --push-main
 uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --push --branch feature
 ```
+
+Each push writes a report of attempted refs and outcomes (including refusals such as missing `--push-main`).
 
 ## Several repositories
 

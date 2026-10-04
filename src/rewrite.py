@@ -19,6 +19,7 @@ from git_dropper_cleanup.gitio import (
     require_clean,
     rev_list,
 )
+from git_dropper_cleanup.md_report import commit_meta, utc_now_iso, write_rewrite_report
 from git_dropper_cleanup.report import infected_commits
 
 COMMIT_MESSAGE = "Remove appended JavaScript dropper from branch tip."
@@ -323,17 +324,25 @@ def _reset_checked_out(git: Git, moved: set[str]) -> None:
         git.run("reset", "--hard")
 
 
-def rewrite_repo(git: Git, sign: bool, branch: str | None = None) -> None:
+def rewrite_repo(
+    git: Git,
+    sign: bool,
+    branch: str | None = None,
+    *,
+    write_report: bool = True,
+) -> None:
     """Rewrite infected commits and descendants. Refuse a shared single-branch history.
 
     Does not check out each commit, does not change git config, and does not push.
     Clean ancestors keep their SHAs. Backup tips are not pushed.
     """
+    started = utc_now_iso()
     refs = _selected_refs(git, branch)
     if not refs:
         print("No local branches or tags to rewrite.")
         return
-    infected = set(infected_commits(git, rev_list(git, *refs)))
+    infected_paths = infected_commits(git, rev_list(git, *refs))
+    infected = set(infected_paths)
     if branch and infected:
         blockers = _blockers(git, branch, refs[0], infected)
         if blockers:
@@ -353,15 +362,47 @@ def rewrite_repo(git: Git, sign: bool, branch: str | None = None) -> None:
     mapped = _map_commits(git, refs, sign)
     tips = [(ref, *_new_tip(git, ref, mapped)) for ref in refs]
     moved: set[str] = set()
+    ref_rows: list[list[str]] = []
     for ref, old, new in tips:
         if new == old:
             continue
         _backup_and_move(git, ref, old, new)
         moved.add(ref)
         print(f"Moved {display_ref(ref)}")
+        ref_rows.append([display_ref(ref), old[:12], new[:12]])
     if not moved:
         print("No refs needed to move.")
         return
     _reset_checked_out(git, moved)
     print(f"Rewrite finished. Backup refs are in {BACKUP_PREFIX} and are not pushed.")
     print("Remote-tracking refs were left on the old commits so a later --push can use --force-with-lease.")
+    if write_report:
+        commit_rows: list[list[str]] = []
+        for old_sha, new_sha in mapped.items():
+            if old_sha == new_sha:
+                continue
+            meta = commit_meta(git, old_sha)
+            if old_sha in infected_paths:
+                files = ", ".join(infected_paths[old_sha])
+            else:
+                files = "parent remap"
+            commit_rows.append(
+                [
+                    old_sha[:12],
+                    new_sha[:12],
+                    meta.author,
+                    meta.committer,
+                    meta.subject,
+                    files,
+                ]
+            )
+        path = write_rewrite_report(
+            repo=str(git.repo),
+            started=started,
+            finished=utc_now_iso(),
+            branch_filter=branch,
+            signed=sign,
+            ref_rows=ref_rows,
+            commit_rows=commit_rows,
+        )
+        print(f"Report written: {path}")

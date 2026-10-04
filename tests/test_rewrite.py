@@ -64,7 +64,7 @@ def infected_history(path: Path) -> tuple[Path, str, str, str]:
 def test_check_lists_clean_branch_and_affected_commit(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     repo, _first, second, _third = infected_history(tmp_path)
     git(repo, "branch", "other", "HEAD~2")
-    status = main(["--check", str(repo)])
+    status = main(["--no-report", "--check", str(repo)])
     output = capsys.readouterr().out
     assert status == 1
     assert "other: clean" in output
@@ -75,7 +75,7 @@ def test_check_lists_clean_branch_and_affected_commit(tmp_path: Path, capsys: py
 def test_full_rewrite_keeps_clean_ancestor(tmp_path: Path) -> None:
     repo, first, second, third = infected_history(tmp_path)
     git(repo, "branch", "other", first)
-    main(["--rewrite", str(repo)])
+    main(["--no-report", "--rewrite", str(repo)])
     assert rev(repo, "main~2") == first
     assert rev(repo, "main") != third
     assert rev(repo, "main^") != second
@@ -91,14 +91,14 @@ def test_branch_refuses_when_sibling_is_not_contained(tmp_path: Path, capsys: py
     commit_file(repo, "side\nglobal.o = \"x\"\n", "side keeps the dropper")
     git(repo, "checkout", "main")
     with pytest.raises(SystemExit):
-        main(["--rewrite", "--branch", "main", str(repo)])
+        main(["--no-report", "--rewrite", "--branch", "main", str(repo)])
     output = capsys.readouterr().out
     assert "no branch name" in output
     assert rev(repo, "main") == third
     missing = git(repo, "show-ref", "--verify", "--quiet", BACKUP, check=False)
     assert missing.returncode != 0
 
-    main(["--rewrite", str(repo)])
+    main(["--no-report", "--rewrite", str(repo)])
     assert rev(repo, "main^") == rev(repo, "side^")
     assert rev(repo, "main^") != second
     assert rev(repo, "main~2") == first
@@ -111,14 +111,14 @@ def test_merged_feature_is_rewritten_with_the_target_after_delete(tmp_path: Path
     repo, first, second, third = infected_history(tmp_path)
     git(repo, "branch", "feature", second)
     with pytest.raises(SystemExit):
-        main(["--rewrite", "--branch", "main", str(repo)])
+        main(["--no-report", "--rewrite", "--branch", "main", str(repo)])
     output = capsys.readouterr().out
     assert "already contained in main" in output
     assert rev(repo, "main") == third
     assert rev(repo, "feature") == second
 
     git(repo, "branch", "-D", "feature")
-    main(["--rewrite", "--branch", "main", str(repo)])
+    main(["--no-report", "--rewrite", "--branch", "main", str(repo)])
     assert rev(repo, "main~2") == first
     assert rev(repo, "main") != third
     assert "global.o" not in git(repo, "show", "main:a.js").stdout
@@ -130,7 +130,7 @@ def test_full_rewrite_moves_annotated_tag(tmp_path: Path) -> None:
     repo, first, _second, third = infected_history(tmp_path)
     git(repo, "tag", "-a", "v1", "-m", "release one")
     old_tag = rev(repo, "refs/tags/v1")
-    main(["--rewrite", str(repo)])
+    main(["--no-report", "--rewrite", str(repo)])
     assert git(repo, "cat-file", "-t", "refs/tags/v1").stdout.strip() == "tag"
     assert rev(repo, "refs/tags/v1^{commit}") == rev(repo, "main")
     assert rev(repo, "refs/tags/v1") != old_tag
@@ -147,7 +147,7 @@ def test_branches_refuses_dirty_worktree(tmp_path: Path, monkeypatch: pytest.Mon
     git(repo, "add", "--", "staged.txt")
     monkeypatch.setattr("git_dropper_cleanup.__main__.signing_key", lambda _git: "key")
     with pytest.raises(SystemExit, match="uncommitted changes"):
-        main(["--branches", str(repo)])
+        main(["--no-report", "--branches", str(repo)])
     assert rev(repo, "main") == third
 
 
@@ -165,7 +165,7 @@ def test_gpg_key_id_is_kept_and_missing_ssh_file_is_dropped(tmp_path: Path) -> N
 def test_one_infected_branch_leaves_the_clean_branch(tmp_path: Path) -> None:
     repo, first, _second, third = infected_history(tmp_path)
     git(repo, "branch", "other", first)
-    main(["--rewrite", "--branch", "main", str(repo)])
+    main(["--no-report", "--rewrite", "--branch", "main", str(repo)])
     assert rev(repo, "other") == first
     assert rev(repo, "main~2") == first
     assert rev(repo, "main") != third
