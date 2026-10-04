@@ -21,26 +21,137 @@ Do not open the clone in an editor, and do not run `npm` or `vite`, until `--che
 
 ## Quick start
 
-```bash
-# Install uv: https://docs.astral.sh/uv/
-uv sync --extra dev
-cp .env.example .env          # Windows: copy .env.example .env
-# Edit CLONE_ROOT if you will clone from URLs
+### Prerequisites
 
+- Python **3.11+** and **git** on `PATH`.
+- **Docker** only if you run the e2e image.
+- Signing is optional — see [docs/signing.md](docs/signing.md).
+- Do not open the infected clone in an editor or run `npm` / `vite` until `--check` is clean.
+
+### Install
+
+With [uv](https://docs.astral.sh/uv/) (same on every OS):
+
+```bash
+uv sync --extra dev
 uv run git-dropper-cleanup --help
-uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --check
+```
+
+Copy `.env.example` to `.env` and set **`CLONE_ROOT`** if you will pass git URLs:
+
+**Linux / macOS**
+
+```bash
+cp .env.example .env
+```
+
+**Windows (PowerShell)**
+
+```powershell
+Copy-Item .env.example .env
 ```
 
 Without uv:
 
+**Linux / macOS**
+
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate     # Windows: .venv\Scripts\Activate.ps1
+source .venv/bin/activate
 pip install -e ".[dev]"
 python -m git_dropper_cleanup --help
 ```
 
-**Prerequisites:** Python **3.11+**, **git** on `PATH`. **Docker** only if you run the e2e image. Signing is optional — see [docs/signing.md](docs/signing.md).
+**Windows (PowerShell)**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[dev]"
+python -m git_dropper_cleanup --help
+```
+
+If `Activate.ps1` is blocked, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` once in that session, or `python -m pip install -e ".[dev]"` without activating.
+
+### Cleanup sequence
+
+Use a **local clone path** or a **git URL** (URLs need `CLONE_ROOT` in `.env`). Replace `owner/repo` with your clone. You can also `export REPO_URL=…` / `$env:REPO_URL = …` and omit the path (see [Configuration](#configuration)).
+
+1. **Check** — read branches, affected commits, and worktree; exit **1** when anything still has the dropper.
+
+   **Linux / macOS**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --check
+   uv run git-dropper-cleanup https://github.com/owner/repo.git --check
+   ```
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
+   uv run git-dropper-cleanup https://github.com/owner/repo.git --check
+   ```
+
+2. **Rewrite** — one branch or the whole clone (see [One branch](#one-branch) if the tool refuses).
+
+   **Linux / macOS — one branch**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --rewrite --branch feature
+   ```
+
+   **Linux / macOS — full clone**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --rewrite
+   ```
+
+   **Windows (PowerShell) — one branch**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --rewrite --branch feature
+   ```
+
+   **Windows (PowerShell) — full clone**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --rewrite
+   ```
+
+3. **Check again** — confirm the rewrite before pushing.
+
+   **Linux / macOS**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --check
+   ```
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
+   ```
+
+4. **Push** — after review; rewritten history uses `--force-with-lease`. Add `--push-main` when `main` or `master` moved.
+
+   **Linux / macOS**
+
+   ```bash
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --push --branch feature
+   uv run git-dropper-cleanup /path/to/clones/owner/repo --push --push-main
+   ```
+
+   **Windows (PowerShell)**
+
+   ```powershell
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --push --branch feature
+   uv run git-dropper-cleanup C:\path\to\clones\owner\repo --push --push-main
+   ```
+
+   **Windows (Git Bash)** uses the same `uv run …` lines as Linux / macOS; use `/c/path/to/clones/owner/repo` paths.
+
+For a repeatable infected demo against `test-affected-repo`, follow **[demo/manual/RUNBOOK.md](demo/manual/RUNBOOK.md)** (prerequisites, infect script, then the same check → rewrite → push → verify loop).
 
 ## What each run can change
 
@@ -86,7 +197,7 @@ flowchart TD
   backup --> pushStep["--push, plus --push-main when main or master moves"]
 ```
 
-Remote-tracking branches are reported by `--check` and are not a reason to refuse. They are not moved. Create a local branch first when a remote-only branch must be rewritten. After a rewrite, `--push` can update the remote with `--force-with-lease` because those remote-tracking refs still point at the old commits.
+Remote-tracking branches are reported by `--check` and are not a reason to refuse a single-branch rewrite. A full `--rewrite` creates local branches for `origin/*` only after it finds infected commits and the worktree is clean. `--rewrite --branch NAME` creates that local branch from `origin/NAME` after the refusal check passes; other remote-only branches stay remote-tracking refs and are not moved. After a rewrite, `--push` can update the remote with `--force-with-lease` because those remote-tracking refs still point at the old commits.
 
 ## Check
 
@@ -100,12 +211,19 @@ Remote-tracking branches are reported by `--check` and are not a reason to refus
 
 The exit code is **1** when the worktree, a branch, a tag, a remote-tracking branch, or `tasks.json` still has the dropper. A backup ref alone does not fail the check.
 
+**Linux / macOS**
+
 ```bash
 uv run git-dropper-cleanup https://github.com/owner/repo.git --check
-uv run git-dropper-cleanup "$CLONE_ROOT/owner/repo" --check
+uv run git-dropper-cleanup /path/to/clones/owner/repo --check
 ```
 
-On Windows PowerShell, use `$env:CLONE_ROOT\owner\repo` instead of `$CLONE_ROOT/owner/repo`.
+**Windows (PowerShell)**
+
+```powershell
+uv run git-dropper-cleanup https://github.com/owner/repo.git --check
+uv run git-dropper-cleanup C:\path\to\clones\owner\repo --check
+```
 
 Example:
 
