@@ -8,6 +8,8 @@ from git_dropper_cleanup.gitio import Git
 from git_dropper_cleanup.md_report import (
     PushOutcome,
     md_table,
+    repo_slug,
+    report_path,
     set_report_root,
     write_push_report,
 )
@@ -29,12 +31,33 @@ def test_md_table_escapes_pipes() -> None:
     assert "x\\|y" in table
 
 
+def test_md_table_escapes_newlines() -> None:
+    table = md_table(["A"], [["line\nbreak"]])
+    data = [line for line in table.splitlines() if "line" in line]
+    assert data == ["| line break |"]
+
+
+def test_report_slug_keeps_owners_apart_and_does_not_overwrite(tmp_path: Path) -> None:
+    left = repo_slug(Path("clones/owner-a/repo"))
+    right = repo_slug(Path("clones/owner-b/repo"))
+    assert left != right
+    assert left == "owner-a-repo"
+    assert right == "owner-b-repo"
+    first = report_path(Path("clones/owner-a/repo"), "check")
+    first.parent.mkdir(parents=True, exist_ok=True)
+    first.write_text("one\n", encoding="utf-8")
+    second = report_path(Path("clones/owner-a/repo"), "check")
+    assert second != first
+    assert second.parent == first.parent
+    assert first.read_text(encoding="utf-8") == "one\n"
+
+
 def test_check_writes_report(tmp_path: Path) -> None:
     repo, _first, second, _third = infected_history(tmp_path)
     git = Git(repo, tmp_path / "hooks")
     status = check_repo(git, write_report=True)
     assert status == 1
-    reports = list((tmp_path / "reports" / "sample").glob("check-*.md"))
+    reports = list((tmp_path / "reports" / repo_slug(repo)).glob("check-*.md"))
     assert len(reports) == 1
     body = reports[0].read_text(encoding="utf-8")
     assert "## Branches" in body
@@ -55,7 +78,7 @@ def test_rewrite_writes_mapping_report(tmp_path: Path) -> None:
     repo, first, second, third = infected_history(tmp_path)
     git = Git(repo, tmp_path / "hooks")
     rewrite_repo(git, sign=False, write_report=True)
-    reports = list((tmp_path / "reports" / "sample").glob("rewrite-*.md"))
+    reports = list((tmp_path / "reports" / repo_slug(repo)).glob("rewrite-*.md"))
     assert len(reports) == 1
     body = reports[0].read_text(encoding="utf-8")
     assert "## Commits rewritten" in body

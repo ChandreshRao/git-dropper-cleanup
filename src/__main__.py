@@ -6,11 +6,11 @@ Does not run Node, npm, or any file from the target repository, and does not cha
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import tempfile
 from pathlib import Path
 
+from git_dropper_cleanup.env import omitted_target
 from git_dropper_cleanup.gitio import Git, resolve_targets, signing_key
 from git_dropper_cleanup.push import push_repo, was_rewritten
 from git_dropper_cleanup.report import check_repo
@@ -64,15 +64,11 @@ def effective_paths(paths: list[str]) -> list[str]:
     """Return CLI paths, or REPO_URL / DEMO_REPO from the environment when omitted."""
     if paths:
         return paths
-    for key in ("REPO_URL", "DEMO_REPO"):
-        value = os.environ.get(key, "").strip()
-        if value:
-            return [value]
+    target = omitted_target()
+    if target:
+        return [target]
     raise SystemExit(
-        "Pass a git URL or a repo path, or set REPO_URL (or DEMO_REPO) in the environment. "
-        "Git Bash: export REPO_URL='https://github.com/<owner>/test-affected-repo.git' — "
-        "PowerShell: $env:REPO_URL = 'https://github.com/<owner>/test-affected-repo.git'. "
-        "See README.md and demo/manual/RUNBOOK.md."
+        "Pass a git URL or a repo path, or set REPO_URL (or DEMO_REPO) in the environment. See README.md."
     )
 
 

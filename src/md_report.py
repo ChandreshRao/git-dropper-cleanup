@@ -32,16 +32,31 @@ def set_report_root(path: Path | None) -> None:
 
 
 def repo_slug(repo_path: str | Path) -> str:
-    """Sanitize a clone path into a folder name under reports/."""
-    name = Path(repo_path).name or "repo"
-    safe = re.sub(r"[^\w.\-]+", "-", name).strip("-")
+    """Sanitize a clone path into a folder name under reports/.
+
+    The parent directory is included so owner-a/repo and owner-b/repo stay apart.
+    """
+    path = Path(repo_path)
+    name = path.name or "repo"
+    parent = path.parent.name
+    label = f"{parent}-{name}" if parent not in ("", ".", "/") else name
+    safe = re.sub(r"[^\w.\-]+", "-", label).strip("-")
     return safe or "repo"
 
 
 def report_path(repo_path: str | Path, kind: str) -> Path:
-    """Build a timestamped report file path for check, rewrite, or push."""
+    """Build a timestamped report file path for check, rewrite, or push.
+
+    A second report in the same second gets a numeric suffix instead of overwriting.
+    """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return report_root() / repo_slug(repo_path) / f"{kind}-{stamp}.md"
+    folder = report_root() / repo_slug(repo_path)
+    path = folder / f"{kind}-{stamp}.md"
+    suffix = 2
+    while path.exists():
+        path = folder / f"{kind}-{stamp}-{suffix}.md"
+        suffix += 1
+    return path
 
 
 def write_text(path: Path, body: str) -> Path:

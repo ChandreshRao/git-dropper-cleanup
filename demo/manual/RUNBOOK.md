@@ -73,9 +73,9 @@ This resets only `affected/feature-a` and `affected/feature-b` to their clean se
 
 Pass the **git URL**; the tool uses or creates the clone under `CLONE_ROOT`.
 
-A fresh URL clone only has a local `main`; other branches show under `remotes/origin/…` in `--check`. **`--rewrite` creates matching local branches from those remotes** before rewriting. You can also work against your full local clone path if you prefer (`$DEMO_REPO` / `$env:DEMO_REPO`).
+A fresh URL clone only has a local `main`; other branches show under `remotes/origin/…` in `--check`. A full `--rewrite` creates matching local branches from those remotes only after it finds infected commits and the worktree is clean. `--rewrite --branch NAME` creates that one branch when it exists only on `origin`, and leaves the other remote branches as remote-tracking refs. You can also work against your full local clone path if you prefer (`$DEMO_REPO` / `$env:DEMO_REPO`).
 
-Markdown reports are written under `git-dropper-cleanup/reports/test-affected-repo/`. Open the latest `check-*.md` for tabular branch and commit detail.
+Markdown reports are written under `git-dropper-cleanup/reports/<owner>-test-affected-repo/`. Open the latest `check-*.md` for tabular branch and commit detail.
 
 **Git Bash — check**
 

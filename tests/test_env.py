@@ -7,6 +7,7 @@ import pytest
 from git_dropper_cleanup.env import clone_root
 from git_dropper_cleanup.gitio import parse_clone_dest, redact_url
 from git_dropper_cleanup.__main__ import main
+from tests.test_rewrite import infected_history
 
 
 def test_env_supplies_clone_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,3 +70,18 @@ def test_missing_path_and_repo_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("DEMO_REPO", raising=False)
     with pytest.raises(SystemExit, match="REPO_URL"):
         main(["--check"])
+
+
+def test_demo_repo_fallback_when_repo_url_unset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, *_ = infected_history(tmp_path)
+    monkeypatch.delenv("REPO_URL", raising=False)
+    monkeypatch.setenv("DEMO_REPO", str(repo))
+    assert main(["--no-report", "--check"]) == 1
+
+
+def test_cli_path_wins_over_repo_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo, *_ = infected_history(tmp_path)
+    monkeypatch.setenv("REPO_URL", "https://github.com/acme/widget.git")
+    assert main(["--no-report", "--check", str(repo)]) == 1

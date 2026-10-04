@@ -15,6 +15,7 @@ from git_dropper_cleanup.gitio import (
     for_each_ref,
     is_ancestor,
     local_branches,
+    materialize_local_branch,
     print_signing_help,
     require_clean,
     rev_list,
@@ -205,6 +206,29 @@ def _selected_refs(git: Git, branch: str | None) -> list[str]:
     return for_each_ref(git, "refs/heads", "refs/tags")
 
 
+def _resolve_branch(git: Git, branch: str) -> str:
+    """Return the local branch ref, or origin/branch when that is the only copy.
+
+    Does not create a ref.
+    """
+    local = f"refs/heads/{branch}"
+    if git.run("show-ref", "--verify", "--quiet", local, check=False).returncode == 0:
+        return local
+    remote = f"refs/remotes/origin/{branch}"
+    if git.run("show-ref", "--verify", "--quiet", remote, check=False).returncode == 0:
+        return remote
+    raise SystemExit(f"No local branch named {branch}.")
+
+
+def _candidate_refs(git: Git, branch: str | None) -> list[str]:
+    """Return refs to scan for the dropper. Does not create local branches."""
+    if branch:
+        return [_resolve_branch(git, branch)]
+    refs = _selected_refs(git, None)
+    refs.extend(for_each_ref(git, "refs/remotes/origin"))
+    return refs
+
+
 def _refuse_shared(branch: str, blockers: list[tuple[str, bool]]) -> None:
     """Print the recovery and stop before any object or ref is written."""
     print(f"Refusing to rewrite {branch}.")
@@ -335,19 +359,17 @@ def rewrite_repo(
 
     Does not check out each commit, does not change git config, and does not push.
     Clean ancestors keep their SHAs. Backup tips are not pushed.
+    A refusal or a run that finds nothing infected does not create local branches.
     """
     started = utc_now_iso()
-    # URL clones only check out the default branch; create locals for origin/* so
-    # --rewrite / --rewrite --branch can move the same tips --check reported.
-    ensure_local_branches(git)
-    refs = _selected_refs(git, branch)
-    if not refs:
+    scan = _candidate_refs(git, branch)
+    if not scan:
         print("No local branches or tags to rewrite.")
         return
-    infected_paths = infected_commits(git, rev_list(git, *refs))
+    infected_paths = infected_commits(git, rev_list(git, *scan))
     infected = set(infected_paths)
     if branch and infected:
-        blockers = _blockers(git, branch, refs[0], infected)
+        blockers = _blockers(git, branch, scan[0], infected)
         if blockers:
             _refuse_shared(branch, blockers)
     if not infected:
@@ -355,6 +377,12 @@ def rewrite_repo(
         print(f"No dropper commits on {label}. Nothing was rewritten.")
         return
     require_clean(git)
+    if branch:
+        materialize_local_branch(git, branch)
+        refs = [f"refs/heads/{branch}"]
+    else:
+        ensure_local_branches(git)
+        refs = _selected_refs(git, None)
     if not sign:
         print("No signing key. Rewritten commits will be unsigned.")
         print_signing_help()

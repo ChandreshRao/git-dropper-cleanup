@@ -283,20 +283,60 @@ def print_signing_help() -> None:
     print(SIGNING_HELP)
 
 
+def _branch_conflict(name: str, taken: set[str]) -> str | None:
+    """Return a branch that cannot exist beside name, such as feature beside feature/x."""
+    for other in taken:
+        if other == name:
+            continue
+        if other.startswith(name + "/") or name.startswith(other + "/"):
+            return other
+    return None
+
+
+def _refuse_branch_conflict(name: str, conflict: str) -> None:
+    """Stop before creating a local branch that git cannot store next to conflict."""
+    raise SystemExit(
+        f"Cannot create local branch {name}: it conflicts with {conflict}. "
+        "Rename or delete one of them, then run this again."
+    )
+
+
 def ensure_local_branches(git: Git) -> None:
-    """Create a local branch for each origin branch that does not already exist."""
-    listed = git.run("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin", check=False)
-    if listed.returncode != 0:
+    """Create a local branch for each origin branch that does not already exist.
+
+    Refuses before creating any branch when two names cannot coexist.
+    """
+    existing = set(local_branches(git))
+    taken = set(existing)
+    pending: list[tuple[str, str]] = []
+    for ref in for_each_ref(git, "refs/remotes/origin"):
+        name = ref.removeprefix("refs/remotes/origin/")
+        if not name or name in existing:
+            continue
+        conflict = _branch_conflict(name, taken)
+        if conflict:
+            _refuse_branch_conflict(name, conflict)
+        taken.add(name)
+        pending.append((name, ref))
+    for name, ref in pending:
+        git.run("branch", "--", name, ref)
+
+
+def materialize_local_branch(git: Git, branch: str) -> None:
+    """Create branch from origin/branch when the local branch is missing.
+
+    Does not create any other origin branch.
+    """
+    local = f"refs/heads/{branch}"
+    if git.run("show-ref", "--verify", "--quiet", local, check=False).returncode == 0:
         return
-    for short in listed.stdout.splitlines():
-        if not short or short == "origin" or short.endswith("/HEAD"):
-            continue
-        name = short.split("/", 1)[1] if short.startswith("origin/") else short
-        if not name or name == "HEAD":
-            continue
-        exists = git.run("show-ref", "--verify", "--quiet", f"refs/heads/{name}", check=False)
-        if exists.returncode != 0:
-            git.run("branch", name, short)
+    remote = f"refs/remotes/origin/{branch}"
+    if git.run("show-ref", "--verify", "--quiet", remote, check=False).returncode != 0:
+        raise SystemExit(f"No local branch named {branch}.")
+    conflict = _branch_conflict(branch, set(local_branches(git)))
+    if conflict:
+        _refuse_branch_conflict(branch, conflict)
+    git.run("branch", "--", branch, remote)
 
 
 def require_clean(git: Git) -> None:
