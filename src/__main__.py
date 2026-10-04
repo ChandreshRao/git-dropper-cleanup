@@ -6,6 +6,7 @@ Does not run Node, npm, or any file from the target repository, and does not cha
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -59,6 +60,22 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return args
 
 
+def effective_paths(paths: list[str]) -> list[str]:
+    """Return CLI paths, or REPO_URL / DEMO_REPO from the environment when omitted."""
+    if paths:
+        return paths
+    for key in ("REPO_URL", "DEMO_REPO"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return [value]
+    raise SystemExit(
+        "Pass a git URL or a repo path, or set REPO_URL (or DEMO_REPO) in the environment. "
+        "Git Bash: export REPO_URL='https://github.com/<owner>/test-affected-repo.git' — "
+        "PowerShell: $env:REPO_URL = 'https://github.com/<owner>/test-affected-repo.git'. "
+        "See README.md and demo/manual/RUNBOOK.md."
+    )
+
+
 def selected_mode(args: argparse.Namespace) -> str:
     """Return the one action this invocation will run."""
     if args.rewrite:
@@ -76,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     """Run check, fix, branch-tip cleanup, rewrite, or push for each selected repo."""
     args = parse_args(sys.argv[1:] if argv is None else argv)
     hooks = Path(tempfile.mkdtemp(prefix="git-dropper-cleanup-hooks-"))
-    targets = resolve_targets(args.paths, args.all_in_dir, hooks)
+    targets = resolve_targets(effective_paths(args.paths), args.all_in_dir, hooks)
     mode = selected_mode(args)
     write_report = not args.no_report
     status = 0

@@ -337,6 +337,9 @@ def rewrite_repo(
     Clean ancestors keep their SHAs. Backup tips are not pushed.
     """
     started = utc_now_iso()
+    # URL clones only check out the default branch; create locals for origin/* so
+    # --rewrite / --rewrite --branch can move the same tips --check reported.
+    ensure_local_branches(git)
     refs = _selected_refs(git, branch)
     if not refs:
         print("No local branches or tags to rewrite.")

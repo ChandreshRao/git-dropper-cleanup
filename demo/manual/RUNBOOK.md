@@ -37,7 +37,8 @@ $env:DEMO_REPO = "C:\repos\git-dropper-cleanup\clones\<owner>\test-affected-repo
 
 **Notes**
 
-- **Cleanup** (`uv run git-dropper-cleanup …`) works in Git Bash or PowerShell; pass `$REPO_URL` / `$env:REPO_URL`.
+- **Cleanup** (`uv run git-dropper-cleanup …`) works in Git Bash or PowerShell. Pass the URL as an argument **or** set `REPO_URL` / `DEMO_REPO` and run with no path (e.g. `uv run git-dropper-cleanup --check`).
+- In **PowerShell**, use `$env:REPO_URL`, not `"$REPO_URL"` (that shell variable is usually empty).
 - **Infect / reset** use bash scripts. On Windows, run them via Git Bash, or from PowerShell with `bash` on `PATH` (Git for Windows).
 
 ## Demo loop
@@ -72,18 +73,30 @@ This resets only `affected/feature-a` and `affected/feature-b` to their clean se
 
 Pass the **git URL**; the tool uses or creates the clone under `CLONE_ROOT`.
 
+A fresh URL clone only has a local `main`; other branches show under `remotes/origin/…` in `--check`. **`--rewrite` creates matching local branches from those remotes** before rewriting. You can also work against your full local clone path if you prefer (`$DEMO_REPO` / `$env:DEMO_REPO`).
+
 Markdown reports are written under `git-dropper-cleanup/reports/test-affected-repo/`. Open the latest `check-*.md` for tabular branch and commit detail.
 
 **Git Bash — check**
 
 ```bash
 uv run git-dropper-cleanup "$REPO_URL" --check
+# Or, after export REPO_URL:
+uv run git-dropper-cleanup --check
 ```
 
 **PowerShell — check**
 
 ```powershell
 uv run git-dropper-cleanup $env:REPO_URL --check
+# Or, after $env:REPO_URL = "...":
+uv run git-dropper-cleanup --check
+```
+
+You can always pass the URL literally (no variable):
+
+```powershell
+uv run git-dropper-cleanup "https://github.com/<owner>/test-affected-repo.git" --check
 ```
 
 Expect exit code **1** and output similar to:

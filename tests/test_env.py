@@ -53,3 +53,19 @@ def test_url_clone_refused_when_clone_root_blank(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr("git_dropper_cleanup.env.ENV_PATH", env)
     with pytest.raises(SystemExit, match="CLONE_ROOT"):
         main(["https://github.com/acme/widget.git"])
+
+
+def test_check_uses_repo_url_env_when_path_omitted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REPO_URL", "https://github.com/acme/widget.git")
+    monkeypatch.setattr("git_dropper_cleanup.env.ENV_PATH", tmp_path / "missing.env")
+    with pytest.raises(SystemExit, match="CLONE_ROOT"):
+        main(["--check", "--no-report"])
+
+
+def test_missing_path_and_repo_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("REPO_URL", raising=False)
+    monkeypatch.delenv("DEMO_REPO", raising=False)
+    with pytest.raises(SystemExit, match="REPO_URL"):
+        main(["--check"])
