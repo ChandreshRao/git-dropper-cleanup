@@ -6,6 +6,7 @@ Every command sets core.hooksPath to an empty directory so repository hooks do n
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -18,6 +19,7 @@ No signing key is configured. This script will not run git config.
 Rewritten commits stay unsigned until you set a key and run --rewrite again.
 See docs/signing.md in this repository for SSH or GPG setup.
 """.strip()
+SAFE_SEGMENT = re.compile(r"[A-Za-z0-9._-]+")
 
 
 def find_git() -> str:
@@ -146,24 +148,42 @@ def parse_clone_dest(url: str) -> Path:
     owner, repo = parts[-2], parts[-1]
     if repo.endswith(".git"):
         repo = repo[:-4]
+    for part in (owner, repo):
+        if not SAFE_SEGMENT.fullmatch(part) or part in (".", ".."):
+            raise SystemExit(f"Cannot use {part!r} from URL {redact_url(url)} as a folder name.")
     return clone_root() / owner / repo
+
+
+def redact_url(url: str) -> str:
+    """Return url with any username or token replaced, so it can be printed."""
+    if url.startswith("git@"):
+        return url
+    parsed = urlparse(url)
+    if "@" not in parsed.netloc:
+        return url
+    host = parsed.netloc.rsplit("@", 1)[1]
+    return parsed._replace(netloc=f"***@{host}").geturl()
 
 
 def clone_url(url: str, hooks: Path) -> Path:
     """Clone url under CLONE_ROOT, or reuse an existing clone. Does not run repo code."""
     dest = parse_clone_dest(url)
+    shown = redact_url(url)
     if dest.exists():
         if not (dest / ".git").exists():
             raise SystemExit(f"{dest} exists and is not a git clone")
         print(f"Using existing clone {dest}")
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    print(f"Cloning {url} to {dest}")
+    print(f"Cloning {shown} to {dest}")
     result = git_exec(
         [GIT, "-c", f"core.hooksPath={hooks}", "clone", url, str(dest)]
     )
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip()
+        detail = (result.stderr or result.stdout or "").strip().replace(url, shown)
+        userinfo = urlparse(url).netloc.rpartition("@")[0] if not url.startswith("git@") else ""
+        if userinfo:
+            detail = detail.replace(userinfo, "***")
         raise SystemExit(f"Clone failed: {detail}")
     return dest
 
@@ -246,7 +266,10 @@ def signing_key(git: Git) -> str:
     if result.returncode != 0:
         return ""
     key = result.stdout.strip()
-    if not key or key.startswith("ssh-"):
+    if not key or key.startswith(("ssh-", "key::")):
+        return key
+    fmt = git.run("config", "--get", "gpg.format", check=False).stdout.strip() or "openpgp"
+    if fmt != "ssh":
         return key
     path = Path(os.path.expanduser(key))
     if path.is_file():

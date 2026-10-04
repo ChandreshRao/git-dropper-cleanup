@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from git_dropper_cleanup.env import clone_root
-from git_dropper_cleanup.gitio import parse_clone_dest
+from git_dropper_cleanup.gitio import parse_clone_dest, redact_url
 from git_dropper_cleanup.__main__ import main
 
 
@@ -15,6 +15,24 @@ def test_env_supplies_clone_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     env.write_text(f"CLONE_ROOT={dest}\n", encoding="utf-8")
     monkeypatch.setattr("git_dropper_cleanup.env.ENV_PATH", env)
     assert parse_clone_dest("https://github.com/acme/widget.git") == dest / "acme" / "widget"
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://host/../repo", "https://host/acme/..", "git@host:./repo.git", "https://host/acme/.git"],
+)
+def test_clone_dest_refuses_dot_segments(url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    env = tmp_path / ".env"
+    env.write_text(f"CLONE_ROOT={tmp_path / 'clean'}\n", encoding="utf-8")
+    monkeypatch.setattr("git_dropper_cleanup.env.ENV_PATH", env)
+    with pytest.raises(SystemExit, match="folder name"):
+        parse_clone_dest(url)
+
+
+def test_redact_url_hides_credentials() -> None:
+    assert redact_url("https://user:token@github.com/acme/widget.git") == "https://***@github.com/acme/widget.git"
+    assert redact_url("https://github.com/acme/widget.git") == "https://github.com/acme/widget.git"
+    assert redact_url("git@github.com:acme/widget.git") == "git@github.com:acme/widget.git"
 
 
 def test_relative_clone_root_is_next_to_env(tmp_path: Path) -> None:

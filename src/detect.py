@@ -67,13 +67,16 @@ def strip_text(text: str) -> str | None:
 
 
 def walk_code_files(root: Path) -> list[Path]:
-    """Return code files under root, skipping dependency and build directories."""
+    """Return code files under root, skipping dependency and build directories and symlinks.
+
+    A symlink can point outside the clone, so it is never read or written.
+    """
     found: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [name for name in dirnames if name not in SKIP_DIRS]
         for name in filenames:
             path = Path(dirpath) / name
-            if path.suffix.lower() in CODE_EXTS:
+            if path.suffix.lower() in CODE_EXTS and not path.is_symlink():
                 found.append(path)
     return found
 
@@ -89,7 +92,7 @@ def read_text(path: Path) -> str | None:
 def tasks_marker(root: Path) -> Path | None:
     """Return .vscode/tasks.json when it contains the marker. The file is never edited."""
     tasks = root / ".vscode" / "tasks.json"
-    if not tasks.is_file():
+    if tasks.parent.is_symlink() or tasks.is_symlink() or not tasks.is_file():
         return None
     text = read_text(tasks)
     if text and MARKER.search(text):

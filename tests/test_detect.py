@@ -1,6 +1,8 @@
 """Text cleanup, with no git repository required."""
 
-from git_dropper_cleanup.detect import read_text, strip_text
+import pytest
+
+from git_dropper_cleanup.detect import clean_tree, read_text, strip_text
 
 
 def test_strip_marker() -> None:
@@ -42,3 +44,17 @@ def test_binary_file_is_skipped(tmp_path) -> None:
     path = tmp_path / "a.js"
     path.write_bytes(b"\0\x01")
     assert read_text(path) is None
+
+
+def test_symlinked_code_file_is_not_followed(tmp_path) -> None:
+    outside = tmp_path / "outside.js"
+    outside.write_text("keep\nglobal.o = \"x\"\n", encoding="utf-8")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    try:
+        (repo / "link.js").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks are not available")
+    hits, _tasks = clean_tree(repo, write=True)
+    assert hits == []
+    assert "global.o" in outside.read_text(encoding="utf-8")

@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from git_dropper_cleanup.gitio import GIT
+from git_dropper_cleanup.gitio import GIT, Git, signing_key
 from git_dropper_cleanup.__main__ import main
 
 BACKUP = "refs/backup/git-dropper-cleanup/refs/heads/main"
@@ -39,6 +39,7 @@ def init_repo(path: Path) -> Path:
     git(repo, "config", "user.name", "Test User")
     git(repo, "config", "commit.gpgsign", "false")
     git(repo, "config", "core.autocrlf", "false")
+    git(repo, "config", "gpg.format", "ssh")
     git(repo, "config", "user.signingkey", str(repo / "missing.pub"))
     return repo
 
@@ -123,6 +124,42 @@ def test_merged_feature_is_rewritten_with_the_target_after_delete(tmp_path: Path
     assert "global.o" not in git(repo, "show", "main:a.js").stdout
     missing = git(repo, "show-ref", "--verify", "--quiet", "refs/heads/feature", check=False)
     assert missing.returncode != 0
+
+
+def test_full_rewrite_moves_annotated_tag(tmp_path: Path) -> None:
+    repo, first, _second, third = infected_history(tmp_path)
+    git(repo, "tag", "-a", "v1", "-m", "release one")
+    old_tag = rev(repo, "refs/tags/v1")
+    main(["--rewrite", str(repo)])
+    assert git(repo, "cat-file", "-t", "refs/tags/v1").stdout.strip() == "tag"
+    assert rev(repo, "refs/tags/v1^{commit}") == rev(repo, "main")
+    assert rev(repo, "refs/tags/v1") != old_tag
+    assert rev(repo, "v1~2") == first
+    assert "release one" in git(repo, "cat-file", "tag", "refs/tags/v1").stdout
+    assert "global.o" not in git(repo, "show", "v1:a.js").stdout
+    assert rev(repo, "refs/backup/git-dropper-cleanup/refs/tags/v1") == old_tag
+    assert rev(repo, BACKUP) == third
+
+
+def test_branches_refuses_dirty_worktree(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo, _first, _second, third = infected_history(tmp_path)
+    (repo / "staged.txt").write_text("unrelated\n", encoding="utf-8")
+    git(repo, "add", "--", "staged.txt")
+    monkeypatch.setattr("git_dropper_cleanup.__main__.signing_key", lambda _git: "key")
+    with pytest.raises(SystemExit, match="uncommitted changes"):
+        main(["--branches", str(repo)])
+    assert rev(repo, "main") == third
+
+
+def test_gpg_key_id_is_kept_and_missing_ssh_file_is_dropped(tmp_path: Path) -> None:
+    repo = init_repo(tmp_path)
+    wrapper = Git(repo, tmp_path / "hooks")
+    git(repo, "config", "gpg.format", "openpgp")
+    git(repo, "config", "user.signingkey", "3AA5C34371567BD2")
+    assert signing_key(wrapper) == "3AA5C34371567BD2"
+    git(repo, "config", "gpg.format", "ssh")
+    git(repo, "config", "user.signingkey", str(repo / "missing.pub"))
+    assert signing_key(wrapper) == ""
 
 
 def test_one_infected_branch_leaves_the_clean_branch(tmp_path: Path) -> None:

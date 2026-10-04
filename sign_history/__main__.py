@@ -259,17 +259,24 @@ def check_repo(git: Git, email: str, hint: bool = True) -> int:
 
 
 def rewrite(git: Git, email: str, name: str) -> None:
-    env_filter = f"""
-if [ "$GIT_AUTHOR_EMAIL" != "{email}" ]; then
-  GIT_AUTHOR_EMAIL="{email}"
-  GIT_AUTHOR_NAME="{name}"
+    # The filter is shell code, so email and name only reach it as environment variables.
+    env_filter = """
+if [ "$GIT_AUTHOR_EMAIL" != "$SIGN_HISTORY_EMAIL" ]; then
+  GIT_AUTHOR_EMAIL="$SIGN_HISTORY_EMAIL"
+  GIT_AUTHOR_NAME="$SIGN_HISTORY_NAME"
 fi
-if [ "$GIT_COMMITTER_EMAIL" != "{email}" ]; then
-  GIT_COMMITTER_EMAIL="{email}"
-  GIT_COMMITTER_NAME="{name}"
+if [ "$GIT_COMMITTER_EMAIL" != "$SIGN_HISTORY_EMAIL" ]; then
+  GIT_COMMITTER_EMAIL="$SIGN_HISTORY_EMAIL"
+  GIT_COMMITTER_NAME="$SIGN_HISTORY_NAME"
 fi
 """
-    env = {**os.environ, "FILTER_BRANCH_SQUELCH_WARNING": "1", "GIT_TERMINAL_PROMPT": "0"}
+    env = {
+        **os.environ,
+        "FILTER_BRANCH_SQUELCH_WARNING": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "SIGN_HISTORY_EMAIL": email,
+        "SIGN_HISTORY_NAME": name,
+    }
     cmd = [
         GIT,
         "-c",

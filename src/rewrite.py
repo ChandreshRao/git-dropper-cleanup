@@ -50,7 +50,7 @@ def commit_cleaned(git: Git, paths: list, sign: bool) -> None:
     cmd = ["commit"]
     if sign:
         cmd.append("-S")
-    cmd.extend(["-m", COMMIT_MESSAGE])
+    cmd.extend(["-m", COMMIT_MESSAGE, "--", *(str(path) for path in paths)])
     git.run(*cmd)
     print(f"Committed on {current_branch(git) or 'HEAD'}")
 
@@ -65,6 +65,7 @@ def branches_repo(git: Git, sign: bool) -> None:
         print_signing_help()
         fix_repo(git)
         return
+    require_clean(git)
     start = current_branch(git)
     ensure_local_branches(git)
     for branch in local_branches(git):
@@ -263,6 +264,46 @@ def _map_commits(git: Git, refs: list[str], sign: bool) -> dict[str, str]:
     return mapped
 
 
+def _retag(git: Git, tag_oid: str, commit: str) -> str:
+    """Write a copy of an annotated tag that points at commit. A tag signature is dropped."""
+    raw = git.run_bytes("cat-file", "tag", tag_oid).stdout.decode("utf-8", errors="surrogateescape")
+    header, _, body = raw.partition("\n\n")
+    lines: list[str] = []
+    skipping = False
+    for line in header.splitlines():
+        if skipping and line.startswith(" "):
+            continue
+        skipping = line.startswith("gpgsig")
+        if skipping:
+            continue
+        if line.startswith("type ") and line != "type commit":
+            raise SystemExit(f"Tag {tag_oid} does not point at a commit. Retag it by hand.")
+        lines.append(f"object {commit}" if line.startswith("object ") else line)
+    signed = False
+    for marker in ("-----BEGIN PGP SIGNATURE-----", "-----BEGIN SSH SIGNATURE-----", "-----BEGIN SIGNED MESSAGE-----"):
+        index = body.find(marker)
+        if index != -1:
+            body = body[:index]
+            signed = True
+    if signed or skipping:
+        print(f"Tag {tag_oid[:12]} was signed. The rewritten tag is unsigned.")
+    payload = "\n".join(lines) + "\n\n" + body
+    written = git.run_bytes("mktag", input_bytes=payload.encode("utf-8", errors="surrogateescape"))
+    return written.stdout.decode("ascii").strip()
+
+
+def _new_tip(git: Git, ref: str, mapped: dict[str, str]) -> tuple[str, str]:
+    """Return the current and replacement object for ref. Annotated tags get a new tag object."""
+    old = git.out("rev-parse", ref).strip()
+    commit = git.out("rev-parse", f"{ref}^{{commit}}").strip()
+    new_commit = mapped.get(commit, commit)
+    if new_commit == commit:
+        return old, old
+    if old == commit:
+        return old, new_commit
+    return old, _retag(git, old, new_commit)
+
+
 def _backup_and_move(git: Git, ref: str, old: str, new: str) -> None:
     """Store the old tip under refs/backup/git-dropper-cleanup, then move ref."""
     backup = f"{BACKUP_PREFIX}/{ref}"
@@ -310,10 +351,9 @@ def rewrite_repo(git: Git, sign: bool, branch: str | None = None) -> None:
     else:
         print(f"Rewriting affected branches and tags in {git.repo}")
     mapped = _map_commits(git, refs, sign)
+    tips = [(ref, *_new_tip(git, ref, mapped)) for ref in refs]
     moved: set[str] = set()
-    for ref in refs:
-        old = git.out("rev-parse", ref).strip()
-        new = mapped.get(old, old)
+    for ref, old, new in tips:
         if new == old:
             continue
         _backup_and_move(git, ref, old, new)

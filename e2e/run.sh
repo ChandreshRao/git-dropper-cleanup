@@ -15,6 +15,7 @@ git config user.email "e2e@example.com"
 git config user.name "E2E"
 git config commit.gpgsign false
 git config core.autocrlf false
+git config gpg.format ssh
 git config user.signingkey "$SAMPLE/missing.pub"
 
 write_js() {
@@ -33,9 +34,14 @@ write_js $'changed\nglobal.o = "x"\n'
 git add a.js
 git commit -m "still infected"
 
+# uv run must use the project root; cwd is the sample repo after setup above.
+run_tool() {
+  (cd "$ROOT" && uv run git-dropper-cleanup "$@")
+}
+
 echo "== check (expect failure)"
 set +e
-uv run git-dropper-cleanup "$SAMPLE" --check
+run_tool "$SAMPLE" --check
 CHECK_BEFORE=$?
 set -e
 if [[ "$CHECK_BEFORE" -eq 0 ]]; then
@@ -44,10 +50,10 @@ if [[ "$CHECK_BEFORE" -eq 0 ]]; then
 fi
 
 echo "== rewrite"
-uv run git-dropper-cleanup "$SAMPLE" --rewrite
+run_tool "$SAMPLE" --rewrite
 
 echo "== check (expect success)"
-uv run git-dropper-cleanup "$SAMPLE" --check
+run_tool "$SAMPLE" --check
 
 if git show HEAD:a.js | grep -q 'global.o'; then
   echo "dropper still present in HEAD" >&2
