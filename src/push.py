@@ -6,7 +6,7 @@ Backup refs under refs/backup/git-dropper-cleanup are never pushed.
 
 from __future__ import annotations
 
-from git_dropper_cleanup.gitio import Git, for_each_ref, local_branches
+from git_dropper_cleanup.gitio import Git, command_failure, for_each_ref, local_branches
 from git_dropper_cleanup.md_report import PushOutcome, write_push_report
 
 PROTECTED_BRANCHES = {"main", "master"}
@@ -18,7 +18,7 @@ def push_one(git: Git, label: str, *args: str) -> tuple[bool, str]:
     result = git.run(*args, check=False)
     if result.returncode == 0:
         return True, ""
-    detail = (result.stderr or result.stdout or "").strip()
+    detail = command_failure(result.returncode, result.stderr, result.stdout)
     print(f"Push failed for {label}: {detail}")
     return False, detail
 
@@ -27,7 +27,7 @@ def remote_sha(git: Git, ref: str) -> str | None:
     """Return the origin oid of ref, '' when it is absent, or None when the lookup fails."""
     result = git.run("ls-remote", "origin", ref, check=False)
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip()
+        detail = command_failure(result.returncode, result.stderr, result.stdout)
         print(f"Could not read origin {ref}: {detail}")
         return None
     for line in result.stdout.splitlines():

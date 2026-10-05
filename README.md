@@ -274,7 +274,9 @@ commits:
 
 Stop here when you do not want that repository changed.
 
-Each `--check` and `--push` writes a markdown report under `reports/` in this tool checkout. The folder name includes the clone's parent directory, so two repos with the same name stay apart. `--rewrite` writes a report when it moves refs. Reports are not written when a rewrite refuses or finds nothing to change. The console output is unchanged. Pass **`--no-report`** to skip writing files.
+Each `--check` and `--push` writes a markdown report under `reports/` in this tool checkout. The folder name includes the clone's parent directory, so two repos with the same name stay apart. `--rewrite` writes a rewrite report when it moves refs; a refusal produces only the error report. A fatal error writes `reports/errors/error-<timestamp>.md` with the operation, exit code or terminating signal, platform, Git/Python versions, redacted arguments, error text, and traceback. No rewrite report is written when a rewrite refuses or finds nothing to change. Pass **`--no-report`** to skip all report and error-log files.
+
+History checks search only supported code extensions, use one `git grep` thread, and process five commits at a time. These limits avoid the macOS out-of-memory kill commonly shown by a shell as exit 137. If Git is still killed, the error report identifies the Python subprocess result as `-9 (SIGKILL)` and records the affected commit batch.
 
 ## Fix
 

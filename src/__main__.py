@@ -8,10 +8,12 @@ from __future__ import annotations
 import argparse
 import sys
 import tempfile
+import traceback
 from pathlib import Path
 
 from git_dropper_cleanup.env import omitted_target
 from git_dropper_cleanup.gitio import Git, resolve_targets, signing_key
+from git_dropper_cleanup.md_report import write_error_report
 from git_dropper_cleanup.push import push_repo, was_rewritten
 from git_dropper_cleanup.report import check_repo
 from git_dropper_cleanup.rewrite import branches_repo, fix_repo, rewrite_repo
@@ -85,9 +87,9 @@ def selected_mode(args: argparse.Namespace) -> str:
     return "check"
 
 
-def main(argv: list[str] | None = None) -> int:
+def _run(argv: list[str]) -> int:
     """Run check, fix, branch-tip cleanup, rewrite, or push for each selected repo."""
-    args = parse_args(sys.argv[1:] if argv is None else argv)
+    args = parse_args(argv)
     hooks = Path(tempfile.mkdtemp(prefix="git-dropper-cleanup-hooks-"))
     targets = resolve_targets(effective_paths(args.paths), args.all_in_dir, hooks)
     mode = selected_mode(args)
@@ -131,6 +133,41 @@ def main(argv: list[str] | None = None) -> int:
                 write_report=write_report,
             ))
     return status
+
+
+def _requested_mode(argv: list[str]) -> str:
+    """Return a useful operation label even when argument parsing fails."""
+    for flag, mode in (
+        ("--rewrite", "rewrite"),
+        ("--branches", "branches"),
+        ("--fix", "fix"),
+        ("--push", "push"),
+        ("--check", "check"),
+    ):
+        if flag in argv:
+            return mode
+    return "check"
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the command and persist diagnostics for every fatal error."""
+    raw = list(sys.argv[1:] if argv is None else argv)
+    try:
+        return _run(raw)
+    except (SystemExit, Exception) as error:
+        successful_exit = isinstance(error, SystemExit) and error.code in (None, 0)
+        if not successful_exit and "--no-report" not in raw:
+            try:
+                path = write_error_report(
+                    error=error,
+                    argv=raw,
+                    mode=_requested_mode(raw),
+                    traceback_text=traceback.format_exc(),
+                )
+                print(f"Error report written: {path}", file=sys.stderr)
+            except Exception as logging_error:
+                print(f"Could not write error report: {logging_error}", file=sys.stderr)
+        raise
 
 
 if __name__ == "__main__":

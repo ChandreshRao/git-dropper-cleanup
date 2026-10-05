@@ -11,6 +11,7 @@ from git_dropper_cleanup.md_report import (
     repo_slug,
     report_path,
     set_report_root,
+    write_error_report,
     write_push_report,
 )
 from git_dropper_cleanup.report import check_repo
@@ -104,6 +105,34 @@ def test_push_report_builder(tmp_path: Path) -> None:
     body = path.read_text(encoding="utf-8")
     assert "## Refused" in body
     assert "main" in body
+
+
+def test_error_report_contains_runtime_diagnostics() -> None:
+    error = SystemExit("git grep failed: exit -9 (SIGKILL)")
+    path = write_error_report(
+        error=error,
+        argv=["--check", "https://user:secret@example.com/acme/repo.git"],
+        mode="check",
+        traceback_text="example traceback",
+    )
+    body = path.read_text(encoding="utf-8")
+    assert "git grep failed: exit -9 (SIGKILL)" in body
+    assert "example traceback" in body
+    assert "Git version" in body
+    assert "https://***@example.com/acme/repo.git" in body
+    assert "secret" not in body
+
+
+def test_main_writes_error_report(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from git_dropper_cleanup.__main__ import main
+
+    missing = tmp_path / "not-a-repo"
+    with pytest.raises(SystemExit, match="not a git repo"):
+        main(["--check", str(missing)])
+    reports = list((tmp_path / "reports" / "errors").glob("error-*.md"))
+    assert len(reports) == 1
+    assert str(missing) in reports[0].read_text(encoding="utf-8")
+    assert "Error report written:" in capsys.readouterr().err
 
 
 def test_main_no_report_flag(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

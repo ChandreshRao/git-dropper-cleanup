@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -42,6 +43,34 @@ def find_git() -> str:
 
 
 GIT = find_git()
+
+
+def returncode_text(returncode: int) -> str:
+    """Describe a subprocess return code, including the signal that killed it."""
+    if returncode >= 0:
+        return str(returncode)
+    number = -returncode
+    portable_names = {
+        2: "SIGINT",
+        6: "SIGABRT",
+        9: "SIGKILL",
+        10: "SIGBUS",
+        11: "SIGSEGV",
+        15: "SIGTERM",
+    }
+    try:
+        name = signal.Signals(number).name
+    except ValueError:
+        name = portable_names.get(number, f"signal {number}")
+    return f"{returncode} ({name})"
+
+
+def command_failure(returncode: int, stderr: str, stdout: str = "") -> str:
+    """Return actionable diagnostics for a failed subprocess."""
+    detail = (stderr or stdout).strip()
+    if not detail:
+        detail = "no error output; the process may have been killed by the operating system"
+    return f"exit {returncode_text(returncode)}: {detail}"
 
 
 def git_exec(
@@ -108,7 +137,7 @@ class Git:
         result = git_exec(self._cmd(args), input_text=input_text, extra_env=extra_env)
         assert isinstance(result, subprocess.CompletedProcess)
         if check and result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()
+            detail = command_failure(result.returncode, result.stderr, result.stdout)
             raise SystemExit(f"git {' '.join(args)} failed in {self.repo}: {detail}")
         return result
 
@@ -122,7 +151,9 @@ class Git:
         payload = input_bytes if input_bytes is not None else b""
         result = git_exec(self._cmd(args), input_bytes=payload)
         if check and result.returncode != 0:
-            detail = (result.stderr or b"").decode("utf-8", errors="replace").strip()
+            stderr = (result.stderr or b"").decode("utf-8", errors="replace")
+            stdout = (result.stdout or b"").decode("utf-8", errors="replace")
+            detail = command_failure(result.returncode, stderr, stdout)
             raise SystemExit(f"git {' '.join(args)} failed in {self.repo}: {detail}")
         return result
 
@@ -180,7 +211,7 @@ def clone_url(url: str, hooks: Path) -> Path:
         [GIT, "-c", f"core.hooksPath={hooks}", "clone", url, str(dest)]
     )
     if result.returncode != 0:
-        detail = (result.stderr or result.stdout or "").strip().replace(url, shown)
+        detail = command_failure(result.returncode, result.stderr, result.stdout).replace(url, shown)
         userinfo = urlparse(url).netloc.rpartition("@")[0] if not url.startswith("git@") else ""
         if userinfo:
             detail = detail.replace(userinfo, "***")

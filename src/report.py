@@ -5,8 +5,15 @@ Does not edit the worktree, move refs, or push.
 
 from __future__ import annotations
 
-from git_dropper_cleanup.detect import GREP_PATTERN, clean_tree, is_code_path, rel
-from git_dropper_cleanup.gitio import Git, current_branch, display_ref, for_each_ref, rev_list
+from git_dropper_cleanup.detect import CODE_EXTS, GREP_PATTERN, clean_tree, is_code_path, rel
+from git_dropper_cleanup.gitio import (
+    Git,
+    command_failure,
+    current_branch,
+    display_ref,
+    for_each_ref,
+    rev_list,
+)
 from git_dropper_cleanup.md_report import commit_meta, write_check_report
 
 BACKUP_NAMESPACES = (
@@ -14,19 +21,37 @@ BACKUP_NAMESPACES = (
     "refs/backup/git-dropper-cleanup",
     "refs/backup/strip-dropper",  # older tool name
 )
+CODE_PATHSPECS = tuple(f":(icase)*{ext}" for ext in sorted(CODE_EXTS))
+GREP_BATCH = 5
 
 
 def grep_commits(git: Git, commits: list[str]) -> list[str]:
-    """Return commit:path lines whose blobs match the dropper. Does not print payload text."""
+    """Return commit:path lines whose code blobs match the dropper. Does not print payload text.
+
+    One grep thread and small batches keep memory low; macOS kills git grep on large repos otherwise.
+    """
     hits: list[str] = []
-    for start in range(0, len(commits), 20):
-        chunk = commits[start : start + 20]
-        result = git.run("grep", "-I", "-l", "-E", GREP_PATTERN, *chunk, check=False)
+    for start in range(0, len(commits), GREP_BATCH):
+        chunk = commits[start : start + GREP_BATCH]
+        result = git.run(
+            "-c",
+            "grep.threads=1",
+            "grep",
+            "-I",
+            "-l",
+            "-E",
+            GREP_PATTERN,
+            *chunk,
+            "--",
+            *CODE_PATHSPECS,
+            check=False,
+        )
         if result.returncode == 0:
             hits.extend(line for line in result.stdout.splitlines() if line)
-        elif result.returncode not in (0, 1):
-            detail = (result.stderr or "").strip()
-            raise SystemExit(f"git grep failed: {detail}")
+        elif result.returncode != 1:
+            detail = command_failure(result.returncode, result.stderr, result.stdout)
+            span = chunk[0][:12] if len(chunk) == 1 else f"{chunk[0][:12]}..{chunk[-1][:12]}"
+            raise SystemExit(f"git grep failed in {git.repo} for commit batch {span}: {detail}")
     return hits
 
 

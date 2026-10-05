@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+import platform
 
-from git_dropper_cleanup.gitio import Git
+from git_dropper_cleanup.gitio import GIT, Git, redact_url
 
 _DEFAULT_REPORT_ROOT: Path | None = None
 
@@ -64,6 +66,66 @@ def write_text(path: Path, body: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     return path
+
+
+def _safe_arg(value: str) -> str:
+    """Redact credentials embedded in URL command-line arguments."""
+    if value.startswith(("https://", "http://", "ssh://", "git@")):
+        return redact_url(value)
+    return value
+
+
+def write_error_report(
+    *,
+    error: BaseException,
+    argv: list[str],
+    mode: str,
+    traceback_text: str,
+) -> Path:
+    """Write diagnostics for a fatal run without hiding the original exception."""
+    path = report_path("errors", "error")
+    try:
+        version = subprocess.run(
+            [GIT, "--version"],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        git_version = (version.stdout or version.stderr).strip() or "unknown"
+    except OSError as version_error:
+        git_version = f"unavailable: {version_error}"
+    exit_value = error.code if isinstance(error, SystemExit) else 1
+    shown_error = str(error) or repr(error)
+    lines = [
+        "# git-dropper-cleanup error report",
+        "",
+        f"- **Generated:** {utc_now_iso()}",
+        f"- **Operation:** {mode}",
+        f"- **Exit value:** `{exit_value}`",
+        f"- **Error type:** `{type(error).__name__}`",
+        f"- **Working directory:** `{Path.cwd()}`",
+        f"- **Platform:** `{platform.platform()}`",
+        f"- **Python:** `{platform.python_version()}`",
+        f"- **Git executable:** `{GIT}`",
+        f"- **Git version:** `{git_version}`",
+        f"- **Arguments:** `{' '.join(_safe_arg(arg) for arg in argv)}`",
+        "",
+        "## Error",
+        "",
+        "```text",
+        shown_error,
+        "```",
+        "",
+        "## Traceback",
+        "",
+        "```text",
+        traceback_text.rstrip() or "(no traceback)",
+        "```",
+        "",
+    ]
+    return write_text(path, "\n".join(lines))
 
 
 def escape_cell(text: str) -> str:
